@@ -1,0 +1,14 @@
+{
+  "name": "uir-padel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run build --prefix backend && npm run build --prefix frontend",
+    "test": "npm test --prefix backend",
+    "test:e2e": "playwright test",
+    "test:compose": "node tests/compose-smoke.mjs",
+    "test:server": "npm exec --prefix backend -- tsx backend/tests/browser-server.ts"
+  },
+  "devDependencies": { "@playwright/test": "^1.52.0" }
+}
