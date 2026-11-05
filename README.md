@@ -126,3 +126,4 @@ In a second terminal, run `npm run dev --prefix frontend` from the project root.
 This configuration targets a local classroom demonstration over HTTP. Before public hosting, replace demo credentials and the session secret, terminate HTTPS at your reverse proxy, and set `COOKIE_SECURE=true` for the backend. The interface uses Google Fonts when available and falls back to local sans-serif fonts offline. University SSO, payments, notifications, and public signup are outside this version.
 # Padel-reservation-uir
 # Padel-reservation-uir
+# Padel-reservation-uir
