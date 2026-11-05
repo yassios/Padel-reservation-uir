@@ -34,6 +34,98 @@ docker compose down                  # remove containers, keeping database volum
 
 To change the frontend port, set `PORT` in `.env`. Backend port 3000 and database port 5432 are internal to the Compose network and are not published to the host. Database credentials and the session secret are configurable in `.env`; use URL-safe characters for the database password because it is embedded in `DATABASE_URL`.
 
+## Run locally with Kubernetes (kind)
+
+This setup targets the existing **learning** kind cluster (`kind-learning` context), with PostgreSQL storage pinned to **learning-worker**. It creates the `mini-projet` namespace, three Deployments and ClusterIP Services, a ConfigMap, a Secret, and an explicit 2 GiB PV/PVC. No ingress controller or image registry is required. Docker, kind, kubectl, and Node.js 22 must be installed.
+
+Create local secrets once (the resulting file is ignored by Git):
+
+```sh
+umask 077
+# Run only if k8s/.env does not already exist.
+node --input-type=module -e 'import {randomBytes} from "node:crypto"; import {writeFileSync} from "node:fs"; writeFileSync("k8s/.env", `POSTGRES_PASSWORD=${randomBytes(24).toString("hex")}\nSESSION_SECRET=${randomBytes(32).toString("hex")}\n`, {flag:"wx",mode:0o600});'
+```
+
+Alternatively, copy `k8s/.env.example` to `k8s/.env` and replace both placeholders. Keep the password URL-safe (hexadecimal is suitable) and the session secret at least 32 characters long. Keep this file for future deployments. Do not print or commit rendered manifests: they contain the Secret values.
+
+Build, load, and deploy:
+
+```sh
+npm run kind:images
+kubectl --context kind-learning apply -f k8s/namespace.yaml
+kubectl --context kind-learning apply --dry-run=server -k k8s
+kubectl --context kind-learning apply -k k8s
+kubectl --context kind-learning -n mini-projet rollout status deployment/db --timeout=180s
+kubectl --context kind-learning -n mini-projet rollout status deployment/backend --timeout=180s
+kubectl --context kind-learning -n mini-projet rollout status deployment/frontend --timeout=180s
+kubectl --context kind-learning -n mini-projet get pods,services,pvc
+kubectl --context kind-learning -n mini-projet port-forward service/frontend 8080:80
+```
+
+Leave port-forward running and open **http://localhost:8080**. Use the same demo accounts listed above. If port 8080 is occupied by Compose, stop its frontend or use `8081:80`. Only the frontend is forwarded; Nginx proxies `/api` to the backend Service. Restart port-forward if its frontend pod is replaced.
+
+The backend waits for PostgreSQL, then runs its existing migrations and demo seeding. Readiness checks keep unavailable pods out of Service endpoints. PostgreSQL uses one replica and `Recreate` updates to avoid concurrent database processes on its volume. The database readiness check and API health check are separate from application liveness checks.
+
+### Updates and verification
+
+For code updates, change both image `newTag` entries in `k8s/kustomization.yaml` to a fresh tag such as `local-v2`, then build/load that tag and reapply:
+
+```sh
+IMAGE_TAG=local-v2 npm run kind:images
+kubectl --context kind-learning apply -k k8s
+kubectl --context kind-learning -n mini-projet rollout status deployment/backend --timeout=180s
+kubectl --context kind-learning -n mini-projet rollout status deployment/frontend --timeout=180s
+```
+
+Use a new tag for each build; reusing a tag with `IfNotPresent` can leave existing pods running old images. ConfigMap and Secret names include content hashes, so configuration changes also update pod templates. Changing `POSTGRES_PASSWORD` in the file does **not** change an initialized database's password; change it in PostgreSQL first, then update the file and reapply. Changing the database name/user also requires database administration or an intentional data reset.
+
+```sh
+npm run test:k8s
+```
+
+This smoke test starts its own temporary port-forward on a free port, verifies the SPA and API, logs in, creates a dedicated student, replaces all three pods, and checks that accounts and database-backed sessions persist. It also books, verifies, and cancels a reservation if a slot is available; outside bookable hours that part is skipped. It removes its student's records afterward. The test interrupts this local demo while pods restart; run it when nobody else is using it. It always targets `mini-projet`; `KUBE_CONTEXT` can override the default `kind-learning` context.
+
+### Storage, troubleshooting, and cleanup
+
+The PV uses `/var/local/mini-projet/postgres` **inside the learning-worker Docker container**, with node affinity so a replacement database pod returns to the same storage. Data survives pod replacement and reapplying manifests, but deleting the kind node/cluster deletes the data. The 2 GiB capacity describes the PV/PVC binding; hostPath does not impose a disk quota. `Retain` preserves data after claim deletion; it is not a backup.
+
+```sh
+kubectl --context kind-learning -n mini-projet logs deployment/backend
+kubectl --context kind-learning -n mini-projet logs deployment/db
+kubectl --context kind-learning -n mini-projet get events --sort-by=.lastTimestamp
+kubectl --context kind-learning -n mini-projet describe pods
+kubectl --context kind-learning get pv mini-projet-postgres
+```
+
+For `ImagePullBackOff`, confirm the image tags match and rerun the image load command. For a pending database pod, check that `learning-worker` exists and the PVC is Bound. For initialization failures, check database credentials and backend logs. Adapt the PV node affinity before first deployment if using a differently named cluster/node.
+
+To stop the app while retaining configuration and data:
+
+```sh
+kubectl --context kind-learning -n mini-projet scale deployment frontend backend db --replicas=0
+# Resume with the replicas declared in the manifests:
+kubectl --context kind-learning apply -k k8s
+```
+
+If you delete the PVC or namespace, the retained PV becomes `Released`. To recover the same data, first ensure the old database pod is gone, reapply the manifests to recreate the claim, then clear the PV's obsolete claim reference and wait for rebinding:
+
+```sh
+kubectl --context kind-learning apply -k k8s
+kubectl --context kind-learning patch pv mini-projet-postgres --type=json -p='[{"op":"remove","path":"/spec/claimRef"}]'
+kubectl --context kind-learning -n mini-projet get pvc --watch
+```
+
+For an **intentional permanent data reset**, scale all three Deployments to zero and wait for their pods to disappear, then delete only this app's database directory inside the node. Keep the existing claim and secrets:
+
+```sh
+kubectl --context kind-learning -n mini-projet scale deployment frontend backend db --replicas=0
+kubectl --context kind-learning -n mini-projet wait --for=delete pod -l 'app in (frontend,backend,db)' --timeout=120s
+docker exec learning-worker rm -rf /var/local/mini-projet/postgres/pgdata
+kubectl --context kind-learning apply -k k8s
+```
+
+PostgreSQL initializes a new database and the backend recreates the demo accounts. Do not run the reset command if you need to keep reservations or accounts.
+
 ## How bookings work
 
 - Two fixed outdoor courts: Court 1 and Court 2.

@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mini-projet
+resources:
+  - namespace.yaml
+  - storage.yaml
+  - workloads.yaml
+configMapGenerator:
+  - name: app-config
+    literals:
+      - POSTGRES_DB=uir_padel
+      - POSTGRES_USER=padel
+      - NODE_ENV=production
+      - COOKIE_SECURE=false
+secretGenerator:
+  - name: app-secrets
+    envs:
+      - .env
+images:
+  - name: uir-padel-backend
+    newTag: local-v1
+  - name: uir-padel-frontend
+    newTag: local-v1

@@ -8,6 +8,8 @@
     "test": "npm test --prefix backend",
     "test:e2e": "playwright test",
     "test:compose": "node tests/compose-smoke.mjs",
+    "kind:images": "sh scripts/kind-images.sh",
+    "test:k8s": "node tests/k8s-smoke.mjs",
     "test:server": "npm exec --prefix backend -- tsx backend/tests/browser-server.ts"
   },
   "devDependencies": { "@playwright/test": "^1.52.0" }
