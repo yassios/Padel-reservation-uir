@@ -4,6 +4,12 @@ A padel court booking app for Université Internationale de Rabat. Students can 
 
 Built with React, Express/TypeScript, and PostgreSQL. Nginx serves the frontend and forwards API requests to the backend. The database and demo accounts are initialized automatically.
 
+![UIR Padel app screenshot 1](mini-project-screenshots/Readme1.png)
+
+![UIR Padel app screenshot 2](mini-project-screenshots/Readme2.png)
+
+![UIR Padel app screenshot 3](mini-project-screenshots/Readme3.png)
+
 Run the commands below from the project root. Choose one method at a time: both use **http://localhost:8080**.
 
 ## 1. Docker Compose
